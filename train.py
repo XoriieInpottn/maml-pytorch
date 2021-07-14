@@ -20,6 +20,13 @@ import utils
 from maml import MAML
 
 
+def cross_entropy(pred, true):
+    pred = F.softmax(pred, 1)
+    loss = -true * torch.log(pred + 1e-10) - (1.0 - true) * torch.log(1.0 - pred + 1e-10)
+    loss = loss.sum(1).mean()
+    return loss
+
+
 class Trainer(object):
 
     def __init__(self):
@@ -62,10 +69,10 @@ class Trainer(object):
 
         # init model
         self._model = resnet18().to(self._device)
-        self._loss = nn.CrossEntropyLoss()
+        self._loss_fn = cross_entropy
         self._maml = MAML(
             model=self._model,
-            loss_fn=self._loss,
+            loss_fn=self._loss_fn,
             lr=self._args.inner_lr,
             num_steps=self._args.num_steps
         )
@@ -129,7 +136,7 @@ class Trainer(object):
             for i in range(self._args.num_steps):
                 pred = self._model(sx)
                 true = F.one_hot(sy, self._args.num_ways)
-                loss = self._loss(pred, true)
+                loss = self._loss_fn(pred, true)
                 loss.backward()
                 self._inner_optimizer.step()
                 self._inner_optimizer.zero_grad()
