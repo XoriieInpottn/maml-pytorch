@@ -9,22 +9,15 @@ import argparse
 import os
 
 import torch
-from torch import optim, nn
+from torch import optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from torchvision.models import resnet18
 from tqdm import tqdm
 
 import dataset
+import model
 import utils
 from maml import MAML
-
-
-def cross_entropy(pred, true):
-    pred = F.softmax(pred, 1)
-    loss = -true * torch.log(pred + 1e-10) - (1.0 - true) * torch.log(1.0 - pred + 1e-10)
-    loss = loss.sum(1).mean()
-    return loss
 
 
 class Trainer(object):
@@ -34,42 +27,53 @@ class Trainer(object):
         parser.add_argument('--gpu', type=str, default='0', help='Which GPU to use.')
         parser.add_argument('--train-path', required=True, help='Path of the directory that contains the data files.')
         parser.add_argument('--test-path', required=True, help='Path of the directory that contains the data files.')
-        parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
+        parser.add_argument('--batch-size', type=int, default=8, help='Batch size.')
         parser.add_argument('--num-loops', type=int, default=2000, help='The number of loops to train.')
         parser.add_argument('--max-lr', type=float, default=1e-3, help='The maximum value of learning rate.')
         parser.add_argument('--weight-decay', type=float, default=0.3, help='The weight decay value.')
         parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
 
+        parser.add_argument('--image-size', type=int, default=None)
         parser.add_argument('--num-ways', type=int, default=5)
-        parser.add_argument('--num-shots', type=int, default=5)
-        parser.add_argument('--inner-lr', type=float, default=0.1)
-        parser.add_argument('--num-steps', type=int, default=3)
+        parser.add_argument('--num-shots', type=int, default=3)
+        parser.add_argument('--inner-lr', type=float, default=0.01)
+        parser.add_argument('--num-steps', type=int, default=1)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
         os.environ['CUDA_VISIBLE_DEVICES'] = self._args.gpu
 
-        self._device = 'cpu' if self._args.gpu == 'cpu' else 'cuda'
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # create dataset and data loader
-        self._train_dataset = dataset.NKDataset(self._args.train_path, self._args.num_ways, self._args.num_shots)
+        self._train_dataset = dataset.NKDataset(
+            self._args.train_path,
+            image_size=self._args.image_size,
+            num_ways=self._args.num_ways,
+            num_shots=self._args.num_shots
+        )
         self._train_loader = DataLoader(
             self._train_dataset,
             batch_size=self._args.batch_size,
-            num_workers=5,
+            num_workers=10,
             pin_memory=True
         )
 
-        self._test_dataset = dataset.NKDataset(self._args.test_path, self._args.num_ways, self._args.num_shots)
+        self._test_dataset = dataset.NKDataset(
+            self._args.test_path,
+            image_size=self._args.image_size,
+            num_ways=self._args.num_ways,
+            num_shots=self._args.num_shots
+        )
         self._test_loader = DataLoader(
             self._test_dataset,
             batch_size=self._args.batch_size,
-            num_workers=5,
+            num_workers=10,
             pin_memory=True
         )
 
         # init model
-        self._model = resnet18().to(self._device)
-        self._loss_fn = cross_entropy
+        self._model = model.Model(num_classes=self._args.num_ways).to(self._device)
+        self._loss_fn = model.cross_entropy
         self._maml = MAML(
             model=self._model,
             loss_fn=self._loss_fn,
@@ -93,27 +97,28 @@ class Trainer(object):
         it = iter(self._train_loader)
         loops = tqdm(range(self._args.num_loops))
 
+        self._model.train()
         for loop in loops:
             support_doc, query_doc = next(it)
-            support_image = support_doc['image']
-            support_mask = support_doc['mask']
-            query_image = query_doc['image']
-            query_mask = query_doc['mask']
+            support_x = support_doc['image']
+            support_y = support_doc['label']
+            query_x = query_doc['image']
+            query_y = query_doc['label']
 
-            loss, lr = self._train_step(support_image, support_mask, query_image, query_mask)
+            loss, lr = self._train_step(support_x, support_y, query_x, query_y)
             loss = float(loss.numpy())
             loss_g = 0.9 * loss_g + 0.1 * loss
             loops.set_description(f'[{loop + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
 
             if (loop + 1) % 100 == 0 or (loop + 1) == self._args.num_loops:
-                precision, recall = self.evaluate(10)
-                loops.write(
-                    f'[{loop + 1}/{self._args.num_loops}] '
-                    f'L={loss_g:.06f} '
-                    f'precision={precision:.02%} '
-                    f'recall={recall:.02%}'
-                )
-                self._save_model()
+                loops.write(f'[{loop + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}')
+            #     precision, recall = self.evaluate(10)
+            #     loops.write(
+            #         f'[{loop + 1}/{self._args.num_loops}] '
+            #         f'L={loss_g:.06f} '
+            #         f'precision={precision:.02%} '
+            #         f'recall={recall:.02%}'
+            #     )
 
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
@@ -163,8 +168,10 @@ class Trainer(object):
         support_y = support_y.to(self._device)
         query_x = query_x.to(self._device)
         query_y = query_y.to(self._device)
+        support_true = F.one_hot(support_y, self._args.num_ways).float()
+        query_true = F.one_hot(query_y, self._args.num_ways).float()
 
-        loss = self._maml(support_x, support_y, query_x, query_y)
+        loss = self._maml(support_x, support_true, query_x, query_true)
         loss.backward()
         self._optimizer.step()
         self._optimizer.zero_grad()
