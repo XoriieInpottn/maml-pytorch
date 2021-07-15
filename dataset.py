@@ -14,21 +14,34 @@ import torch
 from docset import DocSet
 from torch.utils.data import IterableDataset
 from tqdm import tqdm
+import imgaug.augmenters as iaa
+
+DEFAULT_AUG = [
+    iaa.Dropout([0.0, 0.01]),
+    iaa.Sharpen((0.0, 0.1)),
+    iaa.AddToBrightness((-10, 10)),
+    iaa.AddToHue((-5, 5)),
+    iaa.Fliplr(0.5)
+]
 
 
 class NKDataset(IterableDataset):
 
-    def __init__(self, ds_path, image_size, num_ways, num_shots):
+    def __init__(self, ds_path, image_size, num_ways, num_shots, transform=None):
         super(NKDataset, self).__init__()
         self._image_size = image_size if not isinstance(image_size, int) else (image_size, image_size)
         self._num_ways = num_ways
         self._num_shots = num_shots
         self._docs = collections.defaultdict(list)
-        with DocSet(ds_path, 'r') as ds:
-            for doc in tqdm(ds, leave=False):
-                label = doc['label']
-                self._docs[label].append(doc)
+        if isinstance(ds_path, str):
+            ds_path = [ds_path]
+        for ds_path_i in ds_path:
+            with DocSet(ds_path_i, 'r') as ds:
+                for doc in tqdm(ds, leave=False):
+                    label = doc['label']
+                    self._docs[label].append(doc)
         self._docs = list(self._docs.values())
+        self._transform = iaa.Sequential(transform) if transform is not None else None
 
     def __getitem__(self, item):
         return self.__next__()
@@ -59,6 +72,8 @@ class NKDataset(IterableDataset):
             image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
             if self._image_size is not None:
                 image = cv.resize(image, self._image_size)
+            if callable(self._transform):
+                image = self._transform(image=image)
             image = torch.from_numpy(image)
             image = image.float() / 127.5 - 1.0
             image = image.permute((2, 0, 1))

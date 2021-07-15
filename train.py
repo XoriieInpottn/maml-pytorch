@@ -27,8 +27,7 @@ class Trainer(object):
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument('--gpu', type=str, default='0', help='Which GPU to use.')
-        parser.add_argument('--train-path', required=True, help='Path of the directory that contains the data files.')
-        parser.add_argument('--test-path', required=True, help='Path of the directory that contains the data files.')
+        parser.add_argument('--data-path', required=True, help='Path of the directory that contains the data files.')
         parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
         parser.add_argument('--num-loops', type=int, default=100000, help='The number of loops to train.')
         parser.add_argument('--max-lr', type=float, default=1e-4, help='The maximum value of learning rate.')
@@ -37,9 +36,9 @@ class Trainer(object):
 
         parser.add_argument('--image-size', type=int, default=None)
         parser.add_argument('--num-ways', type=int, default=5)
-        parser.add_argument('--num-shots', type=int, default=3)
+        parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
-        parser.add_argument('--num-steps', type=int, default=1)
+        parser.add_argument('--num-steps', type=int, default=3)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
         os.environ['CUDA_VISIBLE_DEVICES'] = self._args.gpu
@@ -48,10 +47,12 @@ class Trainer(object):
 
         # create dataset and data loader
         self._train_dataset = dataset.NKDataset(
-            self._args.train_path,
+            [os.path.join(self._args.data_path, 'train.ds'),
+             os.path.join(self._args.data_path, 'valid.ds')],
             image_size=self._args.image_size,
             num_ways=self._args.num_ways,
-            num_shots=self._args.num_shots
+            num_shots=self._args.num_shots,
+            transform=dataset.DEFAULT_AUG
         )
         self._train_loader = DataLoader(
             self._train_dataset,
@@ -61,7 +62,7 @@ class Trainer(object):
         )
 
         self._test_dataset = dataset.NKDataset(
-            self._args.test_path,
+            os.path.join(self._args.data_path, 'test.ds'),
             image_size=self._args.image_size,
             num_ways=self._args.num_ways,
             num_shots=self._args.num_shots

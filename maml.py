@@ -18,7 +18,7 @@ class MAML(nn.Module):
     def __init__(self,
                  model: nn.Module,
                  loss_fn: Callable,
-                 lr=0.1,
+                 lr=1e-2,
                  num_steps=3):
         super(MAML, self).__init__()
         self.model = model
@@ -60,10 +60,10 @@ class MAML(nn.Module):
 
             new_param_list = []
             grad_list = autograd.grad(loss, param_list)
-            for param, grad, p in zip(param_list, grad_list, self._param_list):
-                new_param = param - self._lr * grad
+            for j in range(len(param_list)):
+                new_param = param_list[j] - self._lr * grad_list[j]
                 new_param_list.append(new_param)
-                module, name = self._param_spec[p]
+                module, name = self._param_spec[self._param_list[j]]
                 setattr(module, name, new_param)
             param_list = new_param_list
 
