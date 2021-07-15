@@ -44,11 +44,11 @@ class Model(nn.Module):
         image_size = math.ceil(image_size / 2.0)
 
         self._flat_size = image_size * image_size * 64
-        self.fc1 = nn.Linear(self._flat_size, 128)
-        self.fc1_bn = nn.BatchNorm1d(128)
+        self.fc1 = nn.Linear(self._flat_size, 1024)
+        self.fc1_bn = nn.BatchNorm1d(1024)
         self.fc1_relu = nn.ReLU(inplace=True)
 
-        self.fc2 = nn.Linear(128, num_classes)
+        self.fc2 = nn.Linear(1024, num_classes)
 
     def forward(self, x: torch.Tensor):
         h = self.layer1(x)
