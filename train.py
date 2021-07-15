@@ -8,7 +8,9 @@
 import argparse
 import os
 
+import numpy as np
 import torch
+from sklearn import metrics
 from torch import optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -27,16 +29,16 @@ class Trainer(object):
         parser.add_argument('--gpu', type=str, default='0', help='Which GPU to use.')
         parser.add_argument('--train-path', required=True, help='Path of the directory that contains the data files.')
         parser.add_argument('--test-path', required=True, help='Path of the directory that contains the data files.')
-        parser.add_argument('--batch-size', type=int, default=8, help='Batch size.')
-        parser.add_argument('--num-loops', type=int, default=2000, help='The number of loops to train.')
-        parser.add_argument('--max-lr', type=float, default=1e-3, help='The maximum value of learning rate.')
-        parser.add_argument('--weight-decay', type=float, default=0.3, help='The weight decay value.')
+        parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
+        parser.add_argument('--num-loops', type=int, default=100000, help='The number of loops to train.')
+        parser.add_argument('--max-lr', type=float, default=1e-4, help='The maximum value of learning rate.')
+        parser.add_argument('--weight-decay', type=float, default=0.1, help='The weight decay value.')
         parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
 
         parser.add_argument('--image-size', type=int, default=None)
         parser.add_argument('--num-ways', type=int, default=5)
         parser.add_argument('--num-shots', type=int, default=3)
-        parser.add_argument('--inner-lr', type=float, default=0.01)
+        parser.add_argument('--inner-lr', type=float, default=1e-2)
         parser.add_argument('--num-steps', type=int, default=1)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
@@ -66,13 +68,13 @@ class Trainer(object):
         )
         self._test_loader = DataLoader(
             self._test_dataset,
-            batch_size=self._args.batch_size,
+            batch_size=128,
             num_workers=10,
             pin_memory=True
         )
 
         # init model
-        self._model = model.Model(num_classes=self._args.num_ways).to(self._device)
+        self._model = model.Model(64, num_classes=self._args.num_ways).to(self._device)
         self._loss_fn = model.cross_entropy
         self._maml = MAML(
             model=self._model,
@@ -110,15 +112,22 @@ class Trainer(object):
             loss_g = 0.9 * loss_g + 0.1 * loss
             loops.set_description(f'[{loop + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
 
-            if (loop + 1) % 100 == 0 or (loop + 1) == self._args.num_loops:
-                loops.write(f'[{loop + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}')
-            #     precision, recall = self.evaluate(10)
-            #     loops.write(
-            #         f'[{loop + 1}/{self._args.num_loops}] '
-            #         f'L={loss_g:.06f} '
-            #         f'precision={precision:.02%} '
-            #         f'recall={recall:.02%}'
-            #     )
+            if (loop + 1) % 1000 == 0 or (loop + 1) == self._args.num_loops:
+                for support_doc, query_doc in self._test_loader:
+                    support_x = support_doc['image']
+                    support_y = support_doc['label']
+                    query_x = query_doc['image']
+                    query_y = query_doc['label']
+                    pred_y = self._predict_step(support_x, support_y, query_x)
+                    true = query_y.reshape((-1,)).numpy().astype(np.int64)
+                    pred = pred_y.reshape((-1,)).numpy().astype(np.int64)
+                    acc = metrics.accuracy_score(true, pred)
+                    loops.write(
+                        f'[{loop + 1}/{self._args.num_loops}] '
+                        f'L={loss_g:.06f} '
+                        f'acc={acc:.02%} '
+                    )
+                    break
 
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
@@ -136,9 +145,9 @@ class Trainer(object):
         query_x = query_x.to(self._device)
 
         qy_list = []
+        self._maml.checkpoint()
         for sx, sy, qx in zip(support_x, support_y, query_x):
-            state_dict = self._model.state_dict()
-            for i in range(self._args.num_steps):
+            for i in range(self._args.num_steps * 3):
                 pred = self._model(sx)
                 true = F.one_hot(sy, self._args.num_ways)
                 loss = self._loss_fn(pred, true)
@@ -148,7 +157,7 @@ class Trainer(object):
             pred = self._model(qx)
             qy = torch.argmax(pred, 1)
             qy_list.append(qy)
-            self._model.load_state_dict(state_dict)
+            self._maml.restore()
         query_y = torch.stack(qy_list)
         return query_y.detach().cpu()
 

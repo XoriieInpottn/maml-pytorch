@@ -33,6 +33,8 @@ class MAML(nn.Module):
         self._make_param_spec(self._model_symbol)
         self._param_list = list(self._param_spec.keys())
 
+        self._state_dict = None
+
     def _make_param_spec(self, module):
         for name in dir(module):
             obj = getattr(module, name)
@@ -49,20 +51,38 @@ class MAML(nn.Module):
         ]))
 
     def _per_task(self, support_x, support_y, query_x, query_y):
+        param_list = self._param_list
         for i in range(self._num_steps):
             pred_y = self.model(support_x) if i == 0 else self._model_symbol(support_x)
             loss = self._loss_fn(pred_y, support_y)
             if len(loss.shape) != 0:
                 loss = loss.mean()
 
-            grad_list = autograd.grad(loss, self._param_list)
-            for param, grad in zip(self._param_list, grad_list):
+            new_param_list = []
+            grad_list = autograd.grad(loss, param_list)
+            for param, grad, p in zip(param_list, grad_list, self._param_list):
                 new_param = param - self._lr * grad
-                module, name = self._param_spec[param]
+                new_param_list.append(new_param)
+                module, name = self._param_spec[p]
                 setattr(module, name, new_param)
+            param_list = new_param_list
 
         pred_y = self._model_symbol(query_x)
         loss = self._loss_fn(pred_y, query_y)
         if len(loss.shape) != 0:
             loss = loss.mean()
         return loss
+
+    def checkpoint(self):
+        state_dict = self.model.state_dict()
+        self._state_dict = {
+            name: value.to('cpu').numpy()
+            for name, value in state_dict.items()
+        }
+
+    def restore(self):
+        state_dict = {
+            name: torch.from_numpy(value)
+            for name, value in self._state_dict.items()
+        }
+        self.model.load_state_dict(state_dict)
