@@ -87,9 +87,10 @@ class Trainer(object):
         # optimizer
         self._parameters = list(self._model.parameters())
         optimizer_class = getattr(optim, self._args.optimizer)
-        self._optimizer = optimizer_class(
+        self._optimizer = optim.SGD(
             self._parameters,
             lr=self._args.max_lr,
+            momentum=0.9,
             weight_decay=self._args.weight_decay
         )
         self._scheduler = utils.CosineWarmUpAnnealingLR(self._optimizer, self._args.num_loops)
