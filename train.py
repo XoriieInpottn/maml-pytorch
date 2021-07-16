@@ -38,7 +38,7 @@ class Trainer(object):
         parser.add_argument('--num-ways', type=int, default=5)
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
-        parser.add_argument('--num-steps', type=int, default=3)
+        parser.add_argument('--num-steps', type=int, default=5)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
         os.environ['CUDA_VISIBLE_DEVICES'] = self._args.gpu
@@ -148,7 +148,7 @@ class Trainer(object):
         qy_list = []
         self._maml.checkpoint()
         for sx, sy, qx in zip(support_x, support_y, query_x):
-            for i in range(self._args.num_steps * 3):
+            for i in range(self._args.num_steps * 2):
                 pred = self._model(sx)
                 true = F.one_hot(sy, self._args.num_ways)
                 loss = self._loss_fn(pred, true)

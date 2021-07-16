@@ -5,18 +5,19 @@
 @since: 2021-07-14
 """
 
-import numpy as np
-import cv2 as cv
 import collections
 import random
 
+import cv2 as cv
+import imgaug.augmenters as iaa
+import numpy as np
 import torch
 from docset import DocSet
 from torch.utils.data import IterableDataset
 from tqdm import tqdm
-import imgaug.augmenters as iaa
 
 DEFAULT_AUG = [
+    iaa.CropToFixedSize(64, 64),
     iaa.Dropout([0.0, 0.01]),
     iaa.Sharpen((0.0, 0.1)),
     iaa.AddToBrightness((-10, 10)),
@@ -41,7 +42,7 @@ class NKDataset(IterableDataset):
                     label = doc['label']
                     self._docs[label].append(doc)
         self._docs = list(self._docs.values())
-        self._transform = iaa.Sequential(transform) if transform is not None else None
+        self._transform = iaa.Sequential(transform) if transform is not None else iaa.CenterCropToFixedSize(64, 64)
 
     def __getitem__(self, item):
         return self.__next__()
@@ -68,8 +69,10 @@ class NKDataset(IterableDataset):
         image_list = []
         label_list = []
         for doc in doc_list:
-            image = cv.imdecode(np.frombuffer(doc['image'], np.byte), cv.IMREAD_COLOR)
-            image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+            image = doc['image']
+            if isinstance(image, bytes):
+                image = cv.imdecode(np.frombuffer(image, np.byte), cv.IMREAD_COLOR)
+                image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
             if self._image_size is not None:
                 image = cv.resize(image, self._image_size)
             if callable(self._transform):

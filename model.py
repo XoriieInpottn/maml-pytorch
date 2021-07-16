@@ -34,21 +34,17 @@ class Model(nn.Module):
 
     def __init__(self, image_size, num_classes):
         super(Model, self).__init__()
-        self.layer1 = Layer(3, 64)
+        self.layer1 = Layer(3, 32)
         image_size = math.ceil(image_size / 2.0)
-        self.layer2 = Layer(64, 64)
+        self.layer2 = Layer(32, 32)
         image_size = math.ceil(image_size / 2.0)
-        self.layer3 = Layer(64, 64)
+        self.layer3 = Layer(32, 32)
         image_size = math.ceil(image_size / 2.0)
-        self.layer4 = Layer(64, 64)
+        self.layer4 = Layer(32, 32)
         image_size = math.ceil(image_size / 2.0)
 
-        self._flat_size = image_size * image_size * 64
-        self.fc1 = nn.Linear(self._flat_size, 1024)
-        self.fc1_bn = nn.BatchNorm1d(1024)
-        self.fc1_relu = nn.ReLU(inplace=True)
-
-        self.fc2 = nn.Linear(1024, num_classes)
+        self._flat_size = image_size * image_size * 32
+        self.fc = nn.Linear(self._flat_size, num_classes)
 
     def forward(self, x: torch.Tensor):
         h = self.layer1(x)
@@ -58,11 +54,7 @@ class Model(nn.Module):
 
         h = h.reshape(-1, self._flat_size)
 
-        h = self.fc1(h)
-        h = self.fc1_bn(h)
-        h = self.fc1_relu(h)
-
-        h = self.fc2(h)
+        h = self.fc(h)
         return h
 
 
