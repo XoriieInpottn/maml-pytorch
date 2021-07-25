@@ -31,7 +31,7 @@ class Trainer(object):
         parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
         parser.add_argument('--num-loops', type=int, default=50000, help='The number of loops to train.')
         parser.add_argument('--max-lr', type=float, default=2e-4, help='The maximum value of learning rate.')
-        parser.add_argument('--weight-decay', type=float, default=0.05, help='The weight decay value.')
+        parser.add_argument('--weight-decay', type=float, default=0.1, help='The weight decay value.')
         parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
 
         parser.add_argument('--image-size', type=int, default=64)
@@ -54,19 +54,24 @@ class Trainer(object):
              os.path.join(self._args.data_path, 'valid.ds')],
             num_ways=self._args.num_ways,
             num_shots=self._args.num_shots,
-            transform=dataset.ImagenetTransform(self._args.image_size, is_train=True)
+            transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            num_transforms=3
         )
         self._train_loader = DataLoader(
             self._train_dataset,
             batch_size=self._args.batch_size,
             num_workers=8,
-            pin_memory=True
+            pin_memory=True,
+            worker_init_fn=lambda worker_id: np.random.seed(np.random.get_state()[1][0] + worker_id)
         )
         self._test_dataset = dataset.NKDataset(
             os.path.join(self._args.data_path, 'test.ds'),
             num_ways=self._args.num_ways,
             num_shots=self._args.num_shots,
-            transform=dataset.ImagenetTransform(self._args.image_size, is_train=False)
+            transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            num_transforms=3
         )
         self._test_loader = DataLoader(
             self._test_dataset,

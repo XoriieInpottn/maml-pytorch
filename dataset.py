@@ -38,11 +38,19 @@ class ImagenetTransform(object):
 
 class NKDataset(IterableDataset):
 
-    def __init__(self, ds_path, num_ways, num_shots, transform):
+    def __init__(self,
+                 ds_path,
+                 num_ways,
+                 num_shots,
+                 transform_supp,
+                 transform_query,
+                 num_transforms=1):
         super(NKDataset, self).__init__()
         self._num_ways = num_ways
         self._num_shots = num_shots
-        self._transform = transform
+        self._transform_supp = transform_supp
+        self._transform_query = transform_query
+        self._num_transforms = num_transforms
         self._docs = collections.defaultdict(list)
         if isinstance(ds_path, str):
             ds_path = [ds_path]
@@ -72,9 +80,13 @@ class NKDataset(IterableDataset):
             support_task.extend(sample_list[:self._num_shots])
             query_task.extend(sample_list[self._num_shots:])
 
-        return self._collate(support_task), self._collate(query_task)
+        return (
+            self._collate(support_task, self._transform_supp, self._num_transforms),
+            self._collate(query_task, self._transform_query, 1)
+        )
 
-    def _collate(self, doc_list):
+    @staticmethod
+    def _collate(doc_list, transform, num_transforms):
         image_list = []
         label_list = []
         for doc in doc_list:
@@ -83,15 +95,15 @@ class NKDataset(IterableDataset):
                 image = cv.imdecode(np.frombuffer(image, np.byte), cv.IMREAD_COLOR)
                 image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
 
-            if callable(self._transform):
-                image = self._transform(image)
+            raw_image = image
+            for _ in range(num_transforms):
+                image = transform(raw_image)
+                image = np.array(image, np.float32)
+                image = (image - 127.5) / 127.5
+                image = np.transpose(image, (2, 0, 1))
 
-            image = np.array(image, np.float32)
-            image = (image - 127.5) / 127.5
-            image = np.transpose(image, (2, 0, 1))
-            image_list.append(image)
-
-            label_list.append(np.array(doc['label'], np.int64))
+                image_list.append(image)
+                label_list.append(np.array(doc['label'], np.int64))
 
         return {
             'image': np.stack(image_list),
