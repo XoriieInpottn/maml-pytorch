@@ -16,14 +16,18 @@ from torch import nn
 class MAML(nn.Module):
 
     def __init__(self,
-                 model: nn.Module,
+                 model: nn.Module, *,
                  loss_fn: Callable,
-                 lr=1e-2,
-                 num_steps=3):
+                 inner_lr: float,
+                 num_steps: int):
         super(MAML, self).__init__()
         self.model = model
         self._loss_fn = loss_fn
-        self._lr = lr
+
+        assert inner_lr > 0
+        self._inner_lr = inner_lr
+
+        assert num_steps >= 1
         self._num_steps = num_steps
 
         memo = {id(p): p for p in model.parameters()}
@@ -61,7 +65,7 @@ class MAML(nn.Module):
             new_param_list = []
             grad_list = autograd.grad(loss, param_list)
             for j in range(len(param_list)):
-                new_param = param_list[j] - self._lr * grad_list[j]
+                new_param = param_list[j] - self._inner_lr * grad_list[j]
                 new_param_list.append(new_param)
                 module, name = self._param_spec[self._param_list[j]]
                 setattr(module, name, new_param)
