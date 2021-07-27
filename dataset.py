@@ -56,7 +56,7 @@ class NKDataset(IterableDataset):
             ds_path = [ds_path]
         for ds_path_i in ds_path:
             with DocSet(ds_path_i, 'r') as ds:
-                for doc in tqdm(ds, leave=False):
+                for doc in tqdm(ds, dynamic_ncols=True, leave=False, desc='Load data'):
                     label = doc['label']
                     self._docs[label].append(doc)
         self._docs = list(self._docs.values())
@@ -94,16 +94,16 @@ class NKDataset(IterableDataset):
             if isinstance(image, bytes):
                 image = cv.imdecode(np.frombuffer(image, np.byte), cv.IMREAD_COLOR)
                 image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+            label = np.array(doc['label'], np.int64)
 
-            raw_image = image
             for _ in range(num_transforms):
-                image = transform(raw_image)
-                image = np.array(image, np.float32)
-                image = (image - 127.5) / 127.5
-                image = np.transpose(image, (2, 0, 1))
+                image_i = transform(image)
+                image_i = np.array(image_i, np.float32)
+                image_i = (image_i - 127.5) / 127.5
+                image_i = np.transpose(image_i, (2, 0, 1))
 
-                image_list.append(image)
-                label_list.append(np.array(doc['label'], np.int64))
+                image_list.append(image_i)
+                label_list.append(label)
 
         return {
             'image': np.stack(image_list),

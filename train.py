@@ -39,6 +39,8 @@ class Trainer(object):
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
         parser.add_argument('--num-steps', type=int, default=5)
+        parser.add_argument('--eval-interval', type=int, default=1000)
+        parser.add_argument('--num-eval-loops', type=int, default=100)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
         os.environ['CUDA_VISIBLE_DEVICES'] = self._args.gpu
@@ -70,12 +72,12 @@ class Trainer(object):
             num_ways=self._args.num_ways,
             num_shots=self._args.num_shots,
             transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
-            transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=False),
             num_transforms=3
         )
         self._test_loader = DataLoader(
             self._test_dataset,
-            batch_size=128,
+            batch_size=self._args.batch_size,
             num_workers=8,
             pin_memory=True
         )
@@ -104,10 +106,10 @@ class Trainer(object):
     def train(self):
         loss_g = 0.0
         it = iter(self._train_loader)
-        loops = tqdm(range(self._args.num_loops), dynamic_ncols=True, leave=False)
+        loop = tqdm(range(self._args.num_loops), dynamic_ncols=True, leave=False, desc='Train')
 
         self._model.train()
-        for loop in loops:
+        for i in loop:
             support_doc, query_doc = next(it)
             support_x = support_doc['image']
             support_y = support_doc['label']
@@ -117,12 +119,12 @@ class Trainer(object):
             loss, lr = self._train_step(support_x, support_y, query_x, query_y)
             loss = float(loss.numpy())
             loss_g = 0.9 * loss_g + 0.1 * loss
-            loops.set_description(f'[{loop + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
+            loop.set_description(f'[{i + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
 
-            if (loop + 1) % 1000 == 0 or (loop + 1) == self._args.num_loops:
-                acc = self._evaluate()
-                loops.write(
-                    f'[{loop + 1}/{self._args.num_loops}] '
+            if (i + 1) % self._args.eval_interval == 0 or (i + 1) == self._args.num_loops:
+                acc = self._evaluate(self._args.num_eval_loops)
+                loop.write(
+                    f'[{i + 1}/{self._args.num_loops}] '
                     f'L={loss_g:.06f} '
                     f'acc={acc:.02%} '
                 )
@@ -187,17 +189,24 @@ class Trainer(object):
         self._scheduler.step()
         return loss.detach().cpu(), self._scheduler.get_last_lr()[0]
 
-    def _evaluate(self):
-        for support_doc, query_doc in self._test_loader:
+    def _evaluate(self, num_loops):
+        loop = tqdm(range(num_loops), dynamic_ncols=True, leave=False, desc='Evaluate')
+        it = iter(self._test_loader)
+        true_list = []
+        pred_list = []
+        for _ in loop:
+            support_doc, query_doc = next(it)
             support_x = support_doc['image']
             support_y = support_doc['label']
             query_x = query_doc['image']
             query_y = query_doc['label']
             pred_y = self._predict_step(support_x, support_y, query_x)
-            true = query_y.reshape((-1,)).numpy().astype(np.int64)
-            pred = pred_y.reshape((-1,)).numpy().astype(np.int64)
-            acc = metrics.accuracy_score(true, pred)
-            return acc
+            true = query_y.numpy().reshape((-1,)).astype(np.int64)
+            pred = pred_y.numpy().reshape((-1,)).astype(np.int64)
+            true_list.extend(true)
+            pred_list.extend(pred)
+        acc = metrics.accuracy_score(true_list, pred_list)
+        return acc
 
 
 if __name__ == '__main__':
