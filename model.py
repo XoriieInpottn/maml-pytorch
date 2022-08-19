@@ -9,7 +9,6 @@ import math
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 
 class Layer(nn.Sequential):
@@ -49,10 +48,3 @@ class Model(nn.Module):
 
         h = self.fc(h)
         return h
-
-
-def cross_entropy(pred, true):
-    pred = F.softmax(pred, 1)
-    loss = -true * torch.log(pred + 1e-10) - (1.0 - true) * torch.log(1.0 - pred + 1e-10)
-    loss = loss.sum(1).mean()
-    return loss

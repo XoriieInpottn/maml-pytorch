@@ -104,7 +104,6 @@ class Trainer(object):
             weight_decay=self._args.weight_decay
         )
         self._scheduler = utils.CosineWarmUpAnnealingLR(self._optimizer, self._args.num_loops)
-        self._inner_optimizer = optim.SGD(self._parameters, lr=self._args.inner_lr)
 
     def train(self):
         loss_g = 0.0
@@ -154,8 +153,12 @@ class Trainer(object):
                 pred = self._model(sx)
                 loss = self._loss_fn(pred, sy)
                 loss.backward()
-                self._inner_optimizer.step()
-                self._inner_optimizer.zero_grad()
+                with torch.no_grad():
+                    for p in self._model.parameters():
+                        if not p.requires_grad or p.grad is None:
+                            continue
+                        p.add_(p.grad, alpha=-self._args.inner_lr)
+                        p.grad = None
 
             pred = self._model(qx)
             qy = torch.argmax(pred, 1)
