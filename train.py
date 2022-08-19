@@ -12,8 +12,7 @@ import cv2 as cv
 import numpy as np
 import torch
 from sklearn import metrics
-from torch import optim
-from torch.nn import functional as F
+from torch import optim, nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -36,7 +35,7 @@ class Trainer(object):
         parser.add_argument('--weight-decay', type=float, default=0.1, help='The weight decay value.')
         parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
 
-        parser.add_argument('--image-size', type=int, default=64)
+        parser.add_argument('--image-size', type=int, default=84)
         parser.add_argument('--num-ways', type=int, default=5)
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
@@ -88,7 +87,7 @@ class Trainer(object):
 
     def _create_model(self):
         self._model = model.Model(self._args.image_size, num_classes=self._args.num_ways).to(self._device)
-        self._loss_fn = model.cross_entropy
+        self._loss_fn = nn.CrossEntropyLoss()
         self._maml = MAML(
             self._model,
             loss_fn=self._loss_fn,
@@ -153,8 +152,7 @@ class Trainer(object):
         for sx, sy, qx in zip(support_x, support_y, query_x):
             for i in range(self._args.num_steps * 2):
                 pred = self._model(sx)
-                true = F.one_hot(sy, self._args.num_ways)
-                loss = self._loss_fn(pred, true)
+                loss = self._loss_fn(pred, sy)
                 loss.backward()
                 self._inner_optimizer.step()
                 self._inner_optimizer.zero_grad()
@@ -183,10 +181,8 @@ class Trainer(object):
         support_y = support_y.to(self._device)
         query_x = query_x.to(self._device)
         query_y = query_y.to(self._device)
-        support_true = F.one_hot(support_y, self._args.num_ways).float()
-        query_true = F.one_hot(query_y, self._args.num_ways).float()
 
-        loss = self._maml(support_x, support_true, query_x, query_true)
+        loss = self._maml(support_x, support_y, query_x, query_y)
         loss.backward()
         self._optimizer.step()
         self._optimizer.zero_grad()

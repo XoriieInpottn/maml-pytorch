@@ -12,23 +12,15 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class Layer(nn.Module):
+class Layer(nn.Sequential):
 
     def __init__(self, in_channels, out_channels, batch_norm=True, non_linear=True):
-        super(Layer, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, (3, 3), (1, 1), (1, 1))
-        self.pool = nn.MaxPool2d((2, 2), (2, 2))
-        self.bn = nn.BatchNorm2d(out_channels) if batch_norm else None
-        self.relu = nn.ReLU(inplace=True) if non_linear else None
-
-    def forward(self, x: torch.Tensor):
-        h = self.conv(x)
-        h = self.pool(h)
-        if self.bn:
-            h = self.bn(h)
-        if self.relu:
-            h = self.relu(h)
-        return h
+        super(Layer, self).__init__(
+            nn.Conv2d(in_channels, out_channels, (3, 3), (1, 1), (1, 1)),
+            nn.BatchNorm2d(out_channels) if batch_norm else nn.Identity(),
+            nn.ReLU(inplace=True) if non_linear else nn.Identity(),
+            nn.MaxPool2d((2, 2), (2, 2)),
+        )
 
 
 class Model(nn.Module):
@@ -36,13 +28,13 @@ class Model(nn.Module):
     def __init__(self, image_size, num_classes):
         super(Model, self).__init__()
         self.layer1 = Layer(3, 32)
-        image_size = math.ceil(image_size / 2.0)
+        image_size = math.floor(image_size / 2.0)
         self.layer2 = Layer(32, 32)
-        image_size = math.ceil(image_size / 2.0)
+        image_size = math.floor(image_size / 2.0)
         self.layer3 = Layer(32, 32)
-        image_size = math.ceil(image_size / 2.0)
+        image_size = math.floor(image_size / 2.0)
         self.layer4 = Layer(32, 32)
-        image_size = math.ceil(image_size / 2.0)
+        image_size = math.floor(image_size / 2.0)
         self._flat_size = image_size * image_size * 32
 
         self.fc = nn.Linear(self._flat_size, num_classes)
