@@ -8,6 +8,7 @@
 import argparse
 import os
 
+import cv2 as cv
 import numpy as np
 import torch
 from sklearn import metrics
@@ -21,12 +22,13 @@ import model
 import utils
 from maml import MAML
 
+cv.setNumThreads(0)
+
 
 class Trainer(object):
 
     def __init__(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('--gpu', type=str, default='0', help='Which GPU to use.')
         parser.add_argument('--data-path', required=True, help='Path of the directory that contains the data files.')
         parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
         parser.add_argument('--num-loops', type=int, default=50000, help='The number of loops to train.')
@@ -43,7 +45,9 @@ class Trainer(object):
         parser.add_argument('--num-eval-loops', type=int, default=100)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
-        os.environ['CUDA_VISIBLE_DEVICES'] = self._args.gpu
+
+        if 'CUDA_VISIBLE_DEVICES' not in os.environ:
+            raise RuntimeError('You must set environment variable CUDA_VISIBLE_DEVICES.')
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self._create_dataset()
@@ -106,7 +110,7 @@ class Trainer(object):
     def train(self):
         loss_g = 0.0
         it = iter(self._train_loader)
-        loop = tqdm(range(self._args.num_loops), dynamic_ncols=True, leave=False, desc='Train')
+        loop = tqdm(range(self._args.num_loops), leave=False, ncols=96, desc='Train')
 
         self._model.train()
         for i in loop:
@@ -190,7 +194,7 @@ class Trainer(object):
         return loss.detach().cpu(), self._scheduler.get_last_lr()[0]
 
     def _evaluate(self, num_loops):
-        loop = tqdm(range(num_loops), dynamic_ncols=True, leave=False, desc='Evaluate')
+        loop = tqdm(range(num_loops), leave=False, ncols=96, desc='Evaluate')
         it = iter(self._test_loader)
         true_list = []
         pred_list = []
