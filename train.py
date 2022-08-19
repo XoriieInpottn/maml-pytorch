@@ -136,30 +136,6 @@ class Trainer(object):
                 f'acc={acc:.02%} '
             )
 
-        # it = iter(self._train_loader)
-        # loop = tqdm(range(self._args.num_loops), leave=False, ncols=96, desc='Train')
-        #
-        # self._model.train()
-        # for i in loop:
-        #     support_doc, query_doc = next(it)
-        #     support_x = support_doc['image']
-        #     support_y = support_doc['label']
-        #     query_x = query_doc['image']
-        #     query_y = query_doc['label']
-        #
-        #     loss, lr = self._train_step(support_x, support_y, query_x, query_y)
-        #     loss = float(loss.numpy())
-        #     loss_g = 0.9 * loss_g + 0.1 * loss
-        #     loop.set_description(f'[{i + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
-        #
-        #     if (i + 1) % self._args.eval_interval == 0 or (i + 1) == self._args.num_loops:
-        #         acc = self._evaluate(self._args.num_eval_loops)
-        #         loop.write(
-        #             f'[{i + 1}/{self._args.num_loops}] '
-        #             f'L={loss_g:.06f} '
-        #             f'acc={acc:.02%} '
-        #         )
-
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
 
@@ -237,24 +213,6 @@ class Trainer(object):
                 true_list.extend(true)
                 pred_list.extend(pred)
         return metrics.accuracy_score(true_list, pred_list)
-
-        # loop = tqdm(range(num_loops), leave=False, ncols=96, desc='Evaluate')
-        # it = iter(self._test_loader)
-        # true_list = []
-        # pred_list = []
-        # for _ in loop:
-        #     support_doc, query_doc = next(it)
-        #     support_x = support_doc['image']
-        #     support_y = support_doc['label']
-        #     query_x = query_doc['image']
-        #     query_y = query_doc['label']
-        #     pred_y = self._predict_step(support_x, support_y, query_x)
-        #     true = query_y.numpy().reshape((-1,)).astype(np.int64)
-        #     pred = pred_y.numpy().reshape((-1,)).astype(np.int64)
-        #     true_list.extend(true)
-        #     pred_list.extend(pred)
-        # acc = metrics.accuracy_score(true_list, pred_list)
-        # return acc
 
 
 if __name__ == '__main__':
