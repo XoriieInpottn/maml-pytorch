@@ -15,11 +15,13 @@ from torch import nn
 
 class MAML(nn.Module):
 
-    def __init__(self,
-                 model: nn.Module, *,
-                 loss_fn: Callable,
-                 inner_lr: float,
-                 num_steps: int):
+    def __init__(
+            self,
+            model: nn.Module, *,
+            loss_fn: Callable,
+            inner_lr: float,
+            num_steps: int
+    ) -> None:
         super(MAML, self).__init__()
         self.model = model
         self._loss_fn = loss_fn
@@ -78,15 +80,10 @@ class MAML(nn.Module):
         return loss
 
     def checkpoint(self):
-        state_dict = self.model.state_dict()
         self._state_dict = {
-            name: value.to('cpu').numpy()
-            for name, value in state_dict.items()
+            name: value.clone().detach()
+            for name, value in self.model.state_dict().items()
         }
 
     def restore(self):
-        state_dict = {
-            name: torch.from_numpy(value)
-            for name, value in self._state_dict.items()
-        }
-        self.model.load_state_dict(state_dict)
+        self.model.load_state_dict(self._state_dict)
