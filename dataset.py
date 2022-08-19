@@ -12,7 +12,7 @@ import cv2 as cv
 import imgaug.augmenters as iaa
 import numpy as np
 from docset import DocSet
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
@@ -36,20 +36,24 @@ class ImagenetTransform(object):
         return self._augmenter(image=image)
 
 
-class NKDataset(IterableDataset):
+class NKDataset(Dataset):
 
-    def __init__(self,
-                 ds_path,
-                 num_ways,
-                 num_shots,
-                 transform_supp,
-                 transform_query,
-                 num_transforms=1):
+    def __init__(
+            self,
+            ds_path,
+            num_ways,
+            num_shots,
+            transform_supp,
+            transform_query,
+            size,
+            num_transforms=1
+    ):
         super(NKDataset, self).__init__()
         self._num_ways = num_ways
         self._num_shots = num_shots
         self._transform_supp = transform_supp
         self._transform_query = transform_query
+        self._size = size
         self._num_transforms = num_transforms
         self._docs = collections.defaultdict(list)
         if isinstance(ds_path, str):
@@ -61,16 +65,13 @@ class NKDataset(IterableDataset):
                     self._docs[label].append(doc)
         self._docs = list(self._docs.values())
 
+    def __len__(self):
+        return self._size
+
     def __getitem__(self, item):
-        return self.__next__()
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
         task = random.sample(self._docs, self._num_ways)
         task = [
-            [{'image': doc['image'], 'label': label} for doc in random.sample(sample_list, self._num_shots * 2)]
+            [{'image': doc['image'], 'label': label} for doc in random.sample(sample_list, self._num_shots * 4)]
             for label, sample_list in enumerate(task)
         ]
 

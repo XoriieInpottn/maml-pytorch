@@ -30,7 +30,7 @@ class Trainer(object):
         parser = argparse.ArgumentParser()
         parser.add_argument('--data-path', required=True, help='Path of the directory that contains the data files.')
         parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
-        parser.add_argument('--num-loops', type=int, default=50000, help='The number of loops to train.')
+        parser.add_argument('--num-epochs', type=int, default=200, help='The number of loops to train.')
         parser.add_argument('--max-lr', type=float, default=2e-4, help='The maximum value of learning rate.')
         parser.add_argument('--weight-decay', type=float, default=0.1, help='The weight decay value.')
         parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
@@ -40,8 +40,8 @@ class Trainer(object):
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
         parser.add_argument('--num-steps', type=int, default=5)
-        parser.add_argument('--eval-interval', type=int, default=1000)
-        parser.add_argument('--num-eval-loops', type=int, default=100)
+        parser.add_argument('--train-size', type=int, default=1000)
+        parser.add_argument('--test-size', type=int, default=100)
         parser.add_argument('--output-dir', default='output')
         self._args = parser.parse_args()
 
@@ -61,7 +61,8 @@ class Trainer(object):
             num_shots=self._args.num_shots,
             transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
             transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=True),
-            num_transforms=3
+            size=self._args.train_size,
+            # num_transforms=3
         )
         self._train_loader = DataLoader(
             self._train_dataset,
@@ -76,7 +77,8 @@ class Trainer(object):
             num_shots=self._args.num_shots,
             transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
             transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=False),
-            num_transforms=3
+            size=self._args.test_size,
+            # num_transforms=3
         )
         self._test_loader = DataLoader(
             self._test_dataset,
@@ -103,33 +105,60 @@ class Trainer(object):
             lr=self._args.max_lr,
             weight_decay=self._args.weight_decay
         )
-        self._scheduler = utils.CosineWarmUpAnnealingLR(self._optimizer, self._args.num_loops)
+        num_loops = self._args.num_epochs * len(self._train_loader)
+        self._scheduler = utils.CosineWarmUpAnnealingLR(self._optimizer, num_loops)
 
     def train(self):
-        loss_g = 0.0
-        it = iter(self._train_loader)
-        loop = tqdm(range(self._args.num_loops), leave=False, ncols=96, desc='Train')
+        loss_g = None
+        for epoch in range(self._args.num_epochs):
+            with tqdm(total=len(self._train_loader), leave=False, ncols=96) as loop:
+                for support_doc, query_doc in self._train_loader:
+                    loop.update()
+                    support_x = support_doc['image']
+                    support_y = support_doc['label']
+                    query_x = query_doc['image']
+                    query_y = query_doc['label']
 
-        self._model.train()
-        for i in loop:
-            support_doc, query_doc = next(it)
-            support_x = support_doc['image']
-            support_y = support_doc['label']
-            query_x = query_doc['image']
-            query_y = query_doc['label']
+                    loss, lr = self._train_step(support_x, support_y, query_x, query_y)
+                    loss = float(loss.numpy())
+                    loss_g = 0.9 * loss_g + 0.1 * loss if loss_g is not None else loss
+                    loop.set_description(
+                        f'[{epoch + 1}/{self._args.num_epochs}] '
+                        f'L={loss_g:.06f} '
+                        f'lr={lr:.01e}',
+                        False
+                    )
 
-            loss, lr = self._train_step(support_x, support_y, query_x, query_y)
-            loss = float(loss.numpy())
-            loss_g = 0.9 * loss_g + 0.1 * loss
-            loop.set_description(f'[{i + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
+            acc = self._evaluate()
+            print(
+                f'[{epoch + 1}/{self._args.num_epochs}] '
+                f'L={loss_g:.06f} '
+                f'acc={acc:.02%} '
+            )
 
-            if (i + 1) % self._args.eval_interval == 0 or (i + 1) == self._args.num_loops:
-                acc = self._evaluate(self._args.num_eval_loops)
-                loop.write(
-                    f'[{i + 1}/{self._args.num_loops}] '
-                    f'L={loss_g:.06f} '
-                    f'acc={acc:.02%} '
-                )
+        # it = iter(self._train_loader)
+        # loop = tqdm(range(self._args.num_loops), leave=False, ncols=96, desc='Train')
+        #
+        # self._model.train()
+        # for i in loop:
+        #     support_doc, query_doc = next(it)
+        #     support_x = support_doc['image']
+        #     support_y = support_doc['label']
+        #     query_x = query_doc['image']
+        #     query_y = query_doc['label']
+        #
+        #     loss, lr = self._train_step(support_x, support_y, query_x, query_y)
+        #     loss = float(loss.numpy())
+        #     loss_g = 0.9 * loss_g + 0.1 * loss
+        #     loop.set_description(f'[{i + 1}/{self._args.num_loops}] L={loss_g:.06f} lr={lr:.01e}', False)
+        #
+        #     if (i + 1) % self._args.eval_interval == 0 or (i + 1) == self._args.num_loops:
+        #         acc = self._evaluate(self._args.num_eval_loops)
+        #         loop.write(
+        #             f'[{i + 1}/{self._args.num_loops}] '
+        #             f'L={loss_g:.06f} '
+        #             f'acc={acc:.02%} '
+        #         )
 
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
@@ -192,24 +221,40 @@ class Trainer(object):
         self._scheduler.step()
         return loss.detach().cpu(), self._scheduler.get_last_lr()[0]
 
-    def _evaluate(self, num_loops):
-        loop = tqdm(range(num_loops), leave=False, ncols=96, desc='Evaluate')
-        it = iter(self._test_loader)
+    def _evaluate(self):
         true_list = []
         pred_list = []
-        for _ in loop:
-            support_doc, query_doc = next(it)
-            support_x = support_doc['image']
-            support_y = support_doc['label']
-            query_x = query_doc['image']
-            query_y = query_doc['label']
-            pred_y = self._predict_step(support_x, support_y, query_x)
-            true = query_y.numpy().reshape((-1,)).astype(np.int64)
-            pred = pred_y.numpy().reshape((-1,)).astype(np.int64)
-            true_list.extend(true)
-            pred_list.extend(pred)
-        acc = metrics.accuracy_score(true_list, pred_list)
-        return acc
+        with tqdm(total=len(self._test_loader), leave=False, ncols=96) as loop:
+            for support_doc, query_doc in self._test_loader:
+                loop.update()
+                support_x = support_doc['image']
+                support_y = support_doc['label']
+                query_x = query_doc['image']
+                query_y = query_doc['label']
+                pred_y = self._predict_step(support_x, support_y, query_x)
+                true = query_y.numpy().reshape((-1,)).astype(np.int64)
+                pred = pred_y.numpy().reshape((-1,)).astype(np.int64)
+                true_list.extend(true)
+                pred_list.extend(pred)
+        return metrics.accuracy_score(true_list, pred_list)
+
+        # loop = tqdm(range(num_loops), leave=False, ncols=96, desc='Evaluate')
+        # it = iter(self._test_loader)
+        # true_list = []
+        # pred_list = []
+        # for _ in loop:
+        #     support_doc, query_doc = next(it)
+        #     support_x = support_doc['image']
+        #     support_y = support_doc['label']
+        #     query_x = query_doc['image']
+        #     query_y = query_doc['label']
+        #     pred_y = self._predict_step(support_x, support_y, query_x)
+        #     true = query_y.numpy().reshape((-1,)).astype(np.int64)
+        #     pred = pred_y.numpy().reshape((-1,)).astype(np.int64)
+        #     true_list.extend(true)
+        #     pred_list.extend(pred)
+        # acc = metrics.accuracy_score(true_list, pred_list)
+        # return acc
 
 
 if __name__ == '__main__':
