@@ -36,6 +36,7 @@ class Trainer(object):
         parser.add_argument('--optimizer', default='SGD')
 
         parser.add_argument('--image-size', type=int, default=84)
+        parser.add_argument('--ch-hid', type=int, default=64)
         parser.add_argument('--num-ways', type=int, default=5)
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)

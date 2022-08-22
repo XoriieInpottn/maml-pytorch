@@ -24,9 +24,8 @@ class Layer(nn.Sequential):
 
 class Model(nn.Module):
 
-    def __init__(self, image_size, num_classes):
+    def __init__(self, image_size, num_classes, ch_hid=64):
         super(Model, self).__init__()
-        ch_hid = 32
         self.layer1 = Layer(3, ch_hid)
         image_size = math.floor(image_size / 2.0)
         self.layer2 = Layer(ch_hid, ch_hid)
