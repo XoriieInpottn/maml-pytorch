@@ -28,12 +28,12 @@ class Trainer(object):
 
     def __init__(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('--data-path', required=True, help='Path of the directory that contains the data files.')
-        parser.add_argument('--batch-size', type=int, default=2, help='Batch size.')
-        parser.add_argument('--num-epochs', type=int, default=200, help='The number of loops to train.')
-        parser.add_argument('--max-lr', type=float, default=2e-4, help='The maximum value of learning rate.')
-        parser.add_argument('--weight-decay', type=float, default=0.1, help='The weight decay value.')
-        parser.add_argument('--optimizer', default='AdamW', help='Name of the optimizer to use.')
+        parser.add_argument('--data-path', required=True)
+        parser.add_argument('--batch-size', type=int, default=2)
+        parser.add_argument('--num-epochs', type=int, default=200)
+        parser.add_argument('--max-lr', type=float, default=1e-3)
+        parser.add_argument('--weight-decay', type=float, default=1e-4)
+        parser.add_argument('--optimizer', default='SGD')
 
         parser.add_argument('--image-size', type=int, default=84)
         parser.add_argument('--num-ways', type=int, default=5)
@@ -67,15 +67,17 @@ class Trainer(object):
         self._train_loader = DataLoader(
             self._train_dataset,
             batch_size=self._args.batch_size,
+            shuffle=True,
+            drop_last=True,
+            persistent_workers=True,
             num_workers=8,
             pin_memory=True,
-            worker_init_fn=lambda worker_id: np.random.seed(np.random.get_state()[1][0] + worker_id)
         )
         self._test_dataset = dataset.NKDataset(
             os.path.join(self._args.data_path, 'test.ds'),
             num_ways=self._args.num_ways,
             num_shots=self._args.num_shots,
-            transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=True),
+            transform_supp=dataset.ImagenetTransform(self._args.image_size, is_train=False),
             transform_query=dataset.ImagenetTransform(self._args.image_size, is_train=False),
             size=self._args.test_size,
             # num_transforms=3
@@ -100,11 +102,19 @@ class Trainer(object):
     def _create_optimizer(self):
         self._parameters = list(self._model.parameters())
         optimizer_class = getattr(optim, self._args.optimizer)
-        self._optimizer = optimizer_class(
-            self._parameters,
-            lr=self._args.max_lr,
-            weight_decay=self._args.weight_decay
-        )
+        opt_args = {
+            'params': self._parameters,
+            'lr': self._args.max_lr,
+            'weight_decay': self._args.weight_decay,
+            'momentum': 0.9,  # SGD, RMSprop
+            'betas': (0.9, 0.999),  # Adam*
+        }
+        co = optimizer_class.__init__.__code__
+        self._optimizer = optimizer_class(**{
+            name: opt_args[name]
+            for name in co.co_varnames[1:co.co_argcount]
+            if name in opt_args
+        })
         num_loops = self._args.num_epochs * len(self._train_loader)
         self._scheduler = utils.CosineWarmUpAnnealingLR(self._optimizer, num_loops)
 
