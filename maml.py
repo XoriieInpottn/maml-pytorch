@@ -20,7 +20,8 @@ class MAML(nn.Module):
             model: nn.Module, *,
             loss_fn: Callable,
             inner_lr: float,
-            num_steps: int
+            num_steps: int,
+            first_order=False
     ) -> None:
         super(MAML, self).__init__()
         self.model = model
@@ -31,6 +32,8 @@ class MAML(nn.Module):
 
         assert num_steps >= 1
         self._num_steps = num_steps
+
+        self.first_order = first_order
 
         memo = {id(p): p for p in model.parameters()}
         self._model_symbol = copy.deepcopy(model, memo)
@@ -65,7 +68,13 @@ class MAML(nn.Module):
                 loss = loss.mean()
 
             new_param_list = []
-            grad_list = autograd.grad(loss, param_list)
+            if self.first_order:
+                grad_list = [
+                    g.detach()
+                    for g in autograd.grad(loss, param_list)
+                ]
+            else:
+                grad_list = autograd.grad(loss, param_list, create_graph=True)
             for j in range(len(param_list)):
                 new_param = param_list[j] - self._inner_lr * grad_list[j]
                 new_param_list.append(new_param)
@@ -87,3 +96,21 @@ class MAML(nn.Module):
 
     def restore(self):
         self.model.load_state_dict(self._state_dict)
+
+
+class FOMAML(MAML):
+
+    def __init__(
+            self,
+            model: nn.Module, *,
+            loss_fn: Callable,
+            inner_lr: float,
+            num_steps: int
+    ) -> None:
+        super(FOMAML, self).__init__(
+            model=model,
+            loss_fn=loss_fn,
+            inner_lr=inner_lr,
+            num_steps=num_steps,
+            first_order=True
+        )
