@@ -40,6 +40,7 @@ class Trainer(object):
         parser.add_argument('--num-shots', type=int, default=5)
         parser.add_argument('--inner-lr', type=float, default=1e-2)
         parser.add_argument('--num-steps', type=int, default=5)
+        parser.add_argument('--first-order', action='store_true')
         parser.add_argument('--train-size', type=int, default=1000)
         parser.add_argument('--test-size', type=int, default=100)
         parser.add_argument('--output-dir', default='output')
@@ -96,7 +97,8 @@ class Trainer(object):
             self._model,
             loss_fn=self._loss_fn,
             inner_lr=self._args.inner_lr,
-            num_steps=self._args.num_steps
+            num_steps=self._args.num_steps,
+            first_order=self._args.first_order
         )
 
     def _create_optimizer(self):

@@ -20,15 +20,18 @@ class ImagenetTransform(object):
 
     def __init__(self, image_size: int, *, is_train: bool):
         self._augmenter = iaa.Sequential([
-            iaa.Resize({'shorter-side': (image_size, int(image_size * 1.1)), 'longer-side': 'keep-aspect-ratio'}),
-            iaa.Fliplr(0.5),
-            iaa.Rotate((-10, 10), cval=127.5),
+            iaa.Resize({
+                'shorter-side': (image_size, int(image_size * 1.1)),
+                'longer-side': 'keep-aspect-ratio'
+            }, interpolation='linear'),
             iaa.CropToFixedSize(image_size, image_size),
-            iaa.GaussianBlur((0.0, 0.1)),
-            iaa.AddToBrightness((-10, 10)),
-            iaa.AddToHue((-5, 5)),
+            iaa.Fliplr(0.5),
+            # iaa.Rotate((-10, 10), cval=127.5),
+            # iaa.GaussianBlur((0.0, 0.1)),
+            # iaa.AddToBrightness((-10, 10)),
+            # iaa.AddToHue((-5, 5)),
         ]) if is_train else iaa.Sequential([
-            iaa.Resize({'shorter-side': image_size, 'longer-side': 'keep-aspect-ratio'}),
+            iaa.Resize({'shorter-side': image_size, 'longer-side': 'keep-aspect-ratio'}, interpolation='linear'),
             iaa.CenterCropToFixedSize(image_size, image_size),
         ])
 
