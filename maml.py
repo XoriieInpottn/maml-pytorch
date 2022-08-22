@@ -37,7 +37,7 @@ class MAML(nn.Module):
 
         self._param_spec = {}
         self._make_param_spec(self._model_symbol)
-        self._param_list = list(self._param_spec.keys())
+        self._param_list = list(self.model.parameters())
 
         self._state_dict = None
 
@@ -46,7 +46,7 @@ class MAML(nn.Module):
             obj = getattr(module, name)
             if isinstance(obj, nn.Parameter):
                 delattr(module, name)
-                self._param_spec[obj] = (module, name)
+                self._param_spec[id(obj)] = (module, name)
         for child in module.children():
             self._make_param_spec(child)
 
@@ -69,7 +69,7 @@ class MAML(nn.Module):
             for j in range(len(param_list)):
                 new_param = param_list[j] - self._inner_lr * grad_list[j]
                 new_param_list.append(new_param)
-                module, name = self._param_spec[self._param_list[j]]
+                module, name = self._param_spec[id(self._param_list[j])]
                 setattr(module, name, new_param)
             param_list = new_param_list
 
