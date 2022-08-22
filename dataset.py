@@ -71,7 +71,7 @@ class NKDataset(Dataset):
     def __getitem__(self, item):
         task = random.sample(self._docs, self._num_ways)
         task = [
-            [{'image': doc['image'], 'label': label} for doc in random.sample(sample_list, self._num_shots * 4)]
+            [{'image': doc['image'], 'label': label} for doc in random.sample(sample_list, self._num_shots * 2)]
             for label, sample_list in enumerate(task)
         ]
 
