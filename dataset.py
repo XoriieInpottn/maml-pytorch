@@ -74,9 +74,10 @@ class NKDataset(Dataset):
     def __getitem__(self, item):
         task = random.sample(self._docs, self._num_ways)
         task = [
-            [{'image': doc['image'], 'label': label} for doc in random.sample(sample_list, self._num_shots * 2)]
+            [{'image': doc['image'], 'label': label}
+             for doc in random.sample(sample_list, self._num_shots * 4)]
             for label, sample_list in enumerate(task)
-        ]
+        ]  # k samples for support set, 3k samples for query set
 
         support_task = []
         query_task = []
