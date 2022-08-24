@@ -7,13 +7,14 @@
 
 import argparse
 import os
-from typing import Iterable
+from math import inf
 
 import cv2 as cv
 import numpy as np
 import torch
 from sklearn import metrics
 from torch import optim, nn
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -25,14 +26,6 @@ from maml import MAML
 cv.setNumThreads(0)
 
 
-def scale_grad_by_value(params: Iterable[nn.Parameter], max_value: float) -> None:
-    for p in params:
-        if p.requires_grad and p.grad is not None:
-            grad_max = float(p.grad.abs().max())
-            if grad_max > max_value:
-                p.grad.mul_(max_value / grad_max)
-
-
 class Trainer(object):
 
     def __init__(self):
@@ -41,8 +34,9 @@ class Trainer(object):
         parser.add_argument('--batch-size', type=int, default=2)
         parser.add_argument('--num-epochs', type=int, default=200)
         parser.add_argument('--max-lr', type=float, default=1e-3)
-        parser.add_argument('--weight-decay', type=float, default=1e-4)
-        parser.add_argument('--optimizer', default='SGD')
+        parser.add_argument('--momentum', type=float, default=0.9)
+        parser.add_argument('--weight-decay', type=float, default=0.1)
+        parser.add_argument('--optimizer', default='AdamW')
 
         parser.add_argument('--image-size', type=int, default=84)
         parser.add_argument('--ch-hid', type=int, default=64)
@@ -122,8 +116,8 @@ class Trainer(object):
             'params': self._parameters,
             'lr': self._args.max_lr,
             'weight_decay': self._args.weight_decay,
-            'momentum': 0.9,  # SGD, RMSprop
-            'betas': (0.9, 0.999),  # Adam*
+            'momentum': self._args.momentum,  # SGD, RMSprop
+            'betas': (self._args.momentum, 0.999),  # Adam*
         }
         co = optimizer_class.__init__.__code__
         self._optimizer = optimizer_class(**{
@@ -218,9 +212,9 @@ class Trainer(object):
 
         loss = self._maml(support_x, support_y, query_x, query_y)
         loss.backward()
-        scale_grad_by_value(self._model.parameters(), 0.1)
+        clip_grad_norm_(self._model.parameters(), 0.1, inf)
         self._optimizer.step()
-        self._optimizer.zero_grad()
+        self._optimizer.zero_grad(set_to_none=True)
         self._scheduler.step()
         return loss.detach().cpu(), self._scheduler.get_last_lr()[0]
 
