@@ -16,29 +16,6 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
-class ImagenetTransform(object):
-
-    def __init__(self, image_size: int, *, is_train: bool):
-        self._augmenter = iaa.Sequential([
-            iaa.Resize({
-                'shorter-side': (image_size, int(image_size * 1.1)),
-                'longer-side': 'keep-aspect-ratio'
-            }, interpolation='linear'),
-            iaa.CropToFixedSize(image_size, image_size),
-            iaa.Fliplr(0.5),
-            # iaa.Rotate((-10, 10), cval=127.5),
-            # iaa.GaussianBlur((0.0, 0.1)),
-            # iaa.AddToBrightness((-10, 10)),
-            # iaa.AddToHue((-5, 5)),
-        ]) if is_train else iaa.Sequential([
-            iaa.Resize({'shorter-side': image_size, 'longer-side': 'keep-aspect-ratio'}, interpolation='linear'),
-            iaa.CenterCropToFixedSize(image_size, image_size),
-        ])
-
-    def __call__(self, image):
-        return self._augmenter(image=image)
-
-
 class NKDataset(Dataset):
 
     def __init__(
@@ -48,8 +25,7 @@ class NKDataset(Dataset):
             num_shots,
             transform_supp,
             transform_query,
-            size,
-            num_transforms=1
+            size
     ):
         super(NKDataset, self).__init__()
         self._num_ways = num_ways
@@ -57,7 +33,6 @@ class NKDataset(Dataset):
         self._transform_supp = transform_supp
         self._transform_query = transform_query
         self._size = size
-        self._num_transforms = num_transforms
         self._docs = collections.defaultdict(list)
         if isinstance(ds_path, str):
             ds_path = [ds_path]
@@ -86,12 +61,12 @@ class NKDataset(Dataset):
             query_task.extend(sample_list[self._num_shots:])
 
         return (
-            self._collate(support_task, self._transform_supp, self._num_transforms),
-            self._collate(query_task, self._transform_query, 1)
+            self._collate(support_task, self._transform_supp),
+            self._collate(query_task, self._transform_query)
         )
 
     @staticmethod
-    def _collate(doc_list, transform, num_transforms):
+    def _collate(doc_list, transform):
         image_list = []
         label_list = []
         for doc in doc_list:
@@ -101,16 +76,60 @@ class NKDataset(Dataset):
                 image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
             label = np.array(doc['label'], np.int64)
 
-            for _ in range(num_transforms):
-                image_i = transform(image)
-                image_i = np.array(image_i, np.float32)
-                image_i = (image_i - 127.5) / 127.5
-                image_i = np.transpose(image_i, (2, 0, 1))
+            image_i = transform(image=image)
+            image_i = np.array(image_i, np.float32)
+            image_i = (image_i - 127.5) / 127.5
+            image_i = np.transpose(image_i, (2, 0, 1))
 
-                image_list.append(image_i)
-                label_list.append(label)
+            image_list.append(image_i)
+            label_list.append(label)
 
         return {
             'image': np.stack(image_list),
             'label': np.stack(label_list)
         }
+
+
+class TrainDataset(NKDataset):
+
+    def __init__(
+            self,
+            ds_path,
+            image_size,
+            num_ways,
+            num_shots,
+            size
+    ) -> None:
+        transform = iaa.Sequential([
+            iaa.Resize((image_size, image_size), interpolation='linear'),
+            iaa.Fliplr(0.5)
+        ])
+        super(TrainDataset, self).__init__(
+            ds_path=ds_path,
+            num_ways=num_ways,
+            num_shots=num_shots,
+            transform_supp=transform,
+            transform_query=transform,
+            size=size
+        )
+
+
+class TestDataset(NKDataset):
+
+    def __init__(
+            self,
+            ds_path,
+            image_size,
+            num_ways,
+            num_shots,
+            size
+    ) -> None:
+        transform = iaa.Resize((image_size, image_size), interpolation='linear')
+        super(TestDataset, self).__init__(
+            ds_path=ds_path,
+            num_ways=num_ways,
+            num_shots=num_shots,
+            transform_supp=transform,
+            transform_query=transform,
+            size=size
+        )
