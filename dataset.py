@@ -25,7 +25,8 @@ class NKDataset(Dataset):
             num_shots,
             transform_supp,
             transform_query,
-            size
+            size,
+            times_of_query_samples=1
     ):
         super(NKDataset, self).__init__()
         self._num_ways = num_ways
@@ -33,6 +34,7 @@ class NKDataset(Dataset):
         self._transform_supp = transform_supp
         self._transform_query = transform_query
         self._size = size
+        self._times_of_query_samples = times_of_query_samples
         self._docs = collections.defaultdict(list)
         if isinstance(ds_path, str):
             ds_path = [ds_path]
@@ -50,9 +52,9 @@ class NKDataset(Dataset):
         task = random.sample(self._docs, self._num_ways)
         task = [
             [{'image': doc['image'], 'label': label}
-             for doc in random.sample(sample_list, self._num_shots * 4)]
+             for doc in random.sample(sample_list, self._num_shots * (1 + self._times_of_query_samples))]
             for label, sample_list in enumerate(task)
-        ]  # k samples for support set, 3k samples for query set
+        ]  # k samples for support set, ak samples for query set
 
         support_task = []
         query_task = []
@@ -110,7 +112,8 @@ class TrainDataset(NKDataset):
             num_shots=num_shots,
             transform_supp=transform,
             transform_query=transform,
-            size=size
+            size=size,
+            times_of_query_samples=1
         )
 
 
@@ -131,5 +134,6 @@ class TestDataset(NKDataset):
             num_shots=num_shots,
             transform_supp=transform,
             transform_query=transform,
-            size=size
+            size=size,
+            times_of_query_samples=3
         )
