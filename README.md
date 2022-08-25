@@ -6,6 +6,8 @@ The training script load the data from [DocSet](https://github.com/XoriieInpottn
 
 ### MiniImagenet
 
+The preprocessed miniimagenet dataset can be downloaded from [here](https://pan.baidu.com/s/1OZtUgRspNaESOSYvQOEEOg?pwd=knvt) (Extract code: knvt).
+
 ```
 miniimagenet/
 	train.ds
@@ -42,7 +44,7 @@ Sample 35999
 The following code train the model using  on GPU:0
 
 ```bash
-CUDA_VISIBLE_DEVICES=gpuid python3 train.py --data-path ~/data/miniimagenet/
+CUDA_VISIBLE_DEVICES=0 python3 train.py --data-path ~/data/miniimagenet/
 ```
 
 
