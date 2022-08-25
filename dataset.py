@@ -113,7 +113,7 @@ class TrainDataset(NKDataset):
             transform_supp=transform,
             transform_query=transform,
             size=size,
-            times_of_query_samples=1
+            times_of_query_samples=3
         )
 
 
