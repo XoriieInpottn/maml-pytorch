@@ -112,23 +112,23 @@ class Trainer(object):
         )
 
     def _create_optimizer(self):
-        self._parameters = list(self.model.parameters())
+        self.parameters = list(self.maml.parameters())
         optimizer_class = getattr(optim, self.config.optimizer)
         opt_args = {
-            'params': self._parameters,
+            'params': self.parameters,
             'lr': self.config.max_lr,
             'weight_decay': self.config.weight_decay,
             'momentum': self.config.momentum,  # SGD, RMSprop
             'betas': (self.config.momentum, 0.999),  # Adam*
         }
         co = optimizer_class.__init__.__code__
-        self._optimizer = optimizer_class(**{
+        self.optimizer = optimizer_class(**{
             name: opt_args[name]
             for name in co.co_varnames[1:co.co_argcount]
             if name in opt_args
         })
         num_loops = self.config.num_epochs * len(self.train_loader)
-        self._scheduler = CosineWarmUpAnnealingLR(self._optimizer, num_loops)
+        self.scheduler = CosineWarmUpAnnealingLR(self.optimizer, num_loops)
 
     def _train_step(self, support_x, support_y, query_x, query_y):
         """Train with a batch of tasks. Each task is consist of several samples.
@@ -153,10 +153,10 @@ class Trainer(object):
         ]))
         loss.backward()
         clip_grad_norm_(self.model.parameters(), 0.1, inf)
-        self._optimizer.step()
-        self._optimizer.zero_grad(set_to_none=True)
-        self._scheduler.step()
-        return loss.detach().cpu(), self._scheduler.get_last_lr()[0]
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
+        self.scheduler.step()
+        return loss.detach().cpu(), self.scheduler.get_last_lr()[0]
 
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
