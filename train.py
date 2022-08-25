@@ -46,6 +46,7 @@ class Config(BaseConfig):
         self.momentum = 0.9
         self.weight_decay = 0.3
         self.optimizer = 'AdamW'
+        self.num_workers = 8
 
         self.inner_lr = 1e-2
         self.num_steps = 5
@@ -70,7 +71,7 @@ class Trainer(object):
         if isinstance(self.loss_fn, nn.Module):
             self.loss_fn.to(self.config.device)
 
-        self._maml = MAML(
+        self.maml = MAML(
             self.model,
             loss_fn=self.loss_fn,
             inner_lr=self.config.inner_lr,
@@ -82,7 +83,7 @@ class Trainer(object):
         self._create_optimizer()
 
     def _create_dataset(self):
-        self._train_loader = DataLoader(
+        self.train_loader = DataLoader(
             TrainDataset(
                 self.config.train_path,
                 image_size=self.config.image_size,
@@ -94,10 +95,10 @@ class Trainer(object):
             shuffle=True,
             drop_last=True,
             persistent_workers=True,
-            num_workers=8,
+            num_workers=self.config.num_workers,
             pin_memory=True,
         )
-        self._test_loader = DataLoader(
+        self.test_loader = DataLoader(
             TestDataset(
                 self.config.test_path,
                 image_size=self.config.image_size,
@@ -106,7 +107,7 @@ class Trainer(object):
                 size=self.config.test_size
             ),
             batch_size=self.config.batch_size,
-            num_workers=8,
+            num_workers=self.config.num_workers,
             pin_memory=True
         )
 
@@ -126,7 +127,7 @@ class Trainer(object):
             for name in co.co_varnames[1:co.co_argcount]
             if name in opt_args
         })
-        num_loops = self.config.num_epochs * len(self._train_loader)
+        num_loops = self.config.num_epochs * len(self.train_loader)
         self._scheduler = CosineWarmUpAnnealingLR(self._optimizer, num_loops)
 
     def _train_step(self, support_x, support_y, query_x, query_y):
@@ -146,7 +147,10 @@ class Trainer(object):
         query_x = query_x.to(self.config.device)
         query_y = query_y.to(self.config.device)
 
-        loss = self._maml(support_x, support_y, query_x, query_y)
+        loss = torch.mean(torch.stack([
+            self.maml.compute_loss(sx, sy, qx, qy)
+            for sx, sy, qx, qy in zip(support_x, support_y, query_x, query_y)
+        ]))
         loss.backward()
         clip_grad_norm_(self.model.parameters(), 0.1, inf)
         self._optimizer.step()
@@ -170,32 +174,24 @@ class Trainer(object):
         query_x = query_x.to(self.config.device)
 
         qy_list = []
-        self._maml.checkpoint()
+        self.maml.checkpoint()
         for sx, sy, qx in zip(support_x, support_y, query_x):
             for i in range(self.config.num_steps * 2):
-                pred = self.model(sx)
-                loss = self.loss_fn(pred, sy)
-                loss.backward()
-                with torch.no_grad():
-                    for p in self.model.parameters():
-                        if not p.requires_grad or p.grad is None:
-                            continue
-                        p.add_(p.grad, alpha=-self.config.inner_lr)
-                        p.grad = None
+                self.maml.update(sx, sy)
 
             pred = self.model(qx)
             qy = torch.argmax(pred, 1)
             qy_list.append(qy)
 
-            self._maml.restore()
+            self.maml.restore()
 
         return torch.stack(qy_list).detach().cpu()
 
     def train(self):
         loss_g = None
         for epoch in range(self.config.num_epochs):
-            with tqdm(total=len(self._train_loader), leave=False, ncols=96) as loop:
-                for support_doc, query_doc in self._train_loader:
+            with tqdm(total=len(self.train_loader), leave=False, ncols=96) as loop:
+                for support_doc, query_doc in self.train_loader:
                     loop.update()
                     support_x = support_doc['image']
                     support_y = support_doc['label']
@@ -222,8 +218,8 @@ class Trainer(object):
     def _evaluate(self):
         true_list = []
         pred_list = []
-        with tqdm(total=len(self._test_loader), leave=False, ncols=96) as loop:
-            for support_doc, query_doc in self._test_loader:
+        with tqdm(total=len(self.test_loader), leave=False, ncols=96) as loop:
+            for support_doc, query_doc in self.test_loader:
                 loop.update()
                 support_x = support_doc['image']
                 support_y = support_doc['label']
@@ -246,6 +242,7 @@ def main():
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight-decay', type=float, default=0.3)
     parser.add_argument('--optimizer', default='AdamW')
+    parser.add_argument('--num-workers', type=int, default=8)
 
     parser.add_argument('--image-size', type=int, default=84)
     parser.add_argument('--ch-hid', type=int, default=32)

@@ -52,12 +52,12 @@ class MAML(nn.Module):
             self._make_param_spec(child)
 
     def forward(self, support_x, support_y, query_x, query_y):
-        return torch.mean(torch.stack([
-            self._per_task(sx, sy, qx, qy)
-            for sx, sy, qx, qy in zip(support_x, support_y, query_x, query_y)
-        ]))
+        if query_x is None or query_y is None:
+            return self.update(support_x, support_y)
+        else:
+            return self.compute_loss(support_x, support_y, query_x, query_y)
 
-    def _per_task(self, support_x, support_y, query_x, query_y):
+    def compute_loss(self, support_x, support_y, query_x, query_y):
         param_list = self.param_list
         for i in range(self.num_steps):
             pred_y = self.model(support_x) if i == 0 else self._model_symbol(support_x)
@@ -66,13 +66,10 @@ class MAML(nn.Module):
                 loss = loss.mean()
 
             new_param_list = []
+            grad_list = autograd.grad(loss, param_list, create_graph=not self.first_order)
             if self.first_order:
-                grad_list = [
-                    g.detach()
-                    for g in autograd.grad(loss, param_list)
-                ]
-            else:
-                grad_list = autograd.grad(loss, param_list, create_graph=True)
+                grad_list = [g.detach() for g in grad_list]
+
             for j in range(len(param_list)):
                 new_param = param_list[j] - self.inner_lr * grad_list[j]
                 new_param_list.append(new_param)
@@ -84,6 +81,18 @@ class MAML(nn.Module):
         loss = self.loss_fn(pred_y, query_y)
         if len(loss.shape) != 0:
             loss = loss.mean()
+        return loss
+
+    def update(self, support_x, support_y):
+        pred = self.model(support_x)
+        loss = self.loss_fn(pred, support_y)
+        loss.backward()
+        with torch.no_grad():
+            for p in self.param_list:
+                if not p.requires_grad or p.grad is None:
+                    continue
+                p.add_(p.grad, alpha=-self.inner_lr)
+                p.grad = None
         return loss
 
     def checkpoint(self):
