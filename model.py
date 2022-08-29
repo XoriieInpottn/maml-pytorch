@@ -15,7 +15,7 @@ class Layer(nn.Sequential):
 
     def __init__(self, in_channels, out_channels, batch_norm=True, non_linear=True):
         super(Layer, self).__init__(
-            nn.Conv2d(in_channels, out_channels, (3, 3), (1, 1), (1, 1)),
+            nn.Conv2d(in_channels, out_channels, (3, 3), (1, 1), (1, 1), bias=False),
             nn.BatchNorm2d(out_channels) if batch_norm else nn.Identity(),
             nn.ReLU(inplace=True) if non_linear else nn.Identity(),
             nn.MaxPool2d((2, 2), (2, 2)),
