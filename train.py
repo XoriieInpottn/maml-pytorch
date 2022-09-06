@@ -17,12 +17,13 @@ from sklearn import metrics
 from torch import optim, nn
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
+from torchcommon import BaseConfig
+from torchcommon.optim import CosineWarmupDecay, LRScheduler
 from tqdm import tqdm
 
 from dataset import TrainDataset, TestDataset
 from maml import MAML
 from model import Model
-from utils import BaseConfig, CosineWarmUpAnnealingLR
 
 cv.setNumThreads(0)
 
@@ -128,7 +129,7 @@ class Trainer(object):
             if name in opt_args
         })
         num_loops = self.config.num_epochs * len(self.train_loader)
-        self.scheduler = CosineWarmUpAnnealingLR(self.optimizer, num_loops)
+        self.scheduler = LRScheduler(self.optimizer, CosineWarmupDecay(num_loops))
 
     def _train_step(self, support_x, support_y, query_x, query_y):
         """Train with a batch of tasks. Each task is consist of several samples.
@@ -140,7 +141,7 @@ class Trainer(object):
             query_y (torch.Tensor): (batch_size, num_samples, ...)
 
         Returns:
-            tuple[torch.Tensor, int]: loss and the current learning rate
+            torch.Tensor: The current loss.
         """
         support_x = support_x.to(self.config.device)
         support_y = support_y.to(self.config.device)
@@ -156,7 +157,7 @@ class Trainer(object):
         self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step()
-        return loss.detach().cpu(), self.scheduler.get_last_lr()[0]
+        return loss.detach().cpu()
 
     def _predict_step(self, support_x, support_y, query_x):
         """Predict a batch of tasks. Each task is consist of several samples.
@@ -198,9 +199,10 @@ class Trainer(object):
                     query_x = query_doc['image']
                     query_y = query_doc['label']
 
-                    loss, lr = self._train_step(support_x, support_y, query_x, query_y)
+                    loss = self._train_step(support_x, support_y, query_x, query_y)
                     loss = float(loss.numpy())
                     loss_g = 0.9 * loss_g + 0.1 * loss if loss_g is not None else loss
+                    lr = self.optimizer.param_groups[0]['lr']
                     loop.set_description(
                         f'[{epoch + 1}/{self.config.num_epochs}] '
                         f'L={loss_g:.06f} '
